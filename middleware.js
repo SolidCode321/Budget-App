@@ -55,15 +55,21 @@ function readCookie(request, name) {
 const SEC_HEADERS = {
   "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
   "X-Content-Type-Options": "nosniff",
-  "Referrer-Policy": "no-referrer",
+  "Referrer-Policy": "same-origin",
   "Cache-Control": "no-store"
 };
 function redirect(to, request, extra = {}) {
-  return new Response(null, { status: 303, headers: { Location: new URL(to, request.url).toString(), "Cache-Control": "no-store", ...extra } });
+  return new Response(null, { status: 303, headers: { Location: to, "Cache-Control": "no-store", ...extra } });
 }
+// Blocks forms posted from other websites. Uses Sec-Fetch-Site (sent by all modern
+// browsers) and falls back to comparing Origin with the Host the browser used.
 function sameOrigin(request) {
+  const site = request.headers.get("sec-fetch-site");
+  if (site) return site === "same-origin" || site === "none";
   const origin = request.headers.get("origin");
-  return !origin || origin === new URL(request.url).origin;
+  if (!origin || origin === "null") return true; // SameSite=Strict cookie still protects the session
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || new URL(request.url).host;
+  try { return new URL(origin).host === host; } catch { return false; }
 }
 
 function loginPage(error) {
