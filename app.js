@@ -24,6 +24,7 @@ function defaults() {
     sources: srcs.map(([name, planned], i) => ({ id: uid() + "s" + i, name, planned })),
     tx: [],
     archive: {},
+    deletedTx: [],
     yearStart: "2026-10"
   };
 }
@@ -35,19 +36,142 @@ function load() {
     if (!raw) return defaults();
     const d = JSON.parse(raw);
     if (!valid(d)) return defaults();
-    d.archive ||= {};
-    return d;
+    return normalize(d);
   } catch { return defaults(); }
 }
-function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(state)); }
-  catch { toast("Couldn't save. Your browser may be blocking storage."); }
+/* Saves to this device straight away, then syncs to the server in the background. */
+function saveLocal() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* private mode etc. – the server copy still works */ }
+}
+function save({ force = false } = {}) {
+  saveLocal();
+  sync.changes++;
+  sync.meta.dirty = true;
+  if (force) sync.force = true;
+  saveMeta();
+  schedulePush();
 }
 function valid(d) {
   return d && Array.isArray(d.categories) && Array.isArray(d.sources) && Array.isArray(d.tx);
 }
 
 let state = load();
+
+/* ---------- server sync ---------- */
+const META_KEY = "budget-sync-v1";
+const sync = { meta: loadMeta(), changes: 0, force: false, timer: null, busy: false, again: false, disabled: false };
+function loadMeta() {
+  try {
+    const m = JSON.parse(localStorage.getItem(META_KEY));
+    if (m && Number.isInteger(m.rev)) return m;
+  } catch {}
+  // First run with sync: anything already in this browser counts as unsynced so it gets uploaded.
+  let hasLocal = false;
+  try { hasLocal = !!localStorage.getItem(KEY); } catch {}
+  return { rev: 0, dirty: hasLocal };
+}
+function saveMeta() { try { localStorage.setItem(META_KEY, JSON.stringify(sync.meta)); } catch {} }
+
+function setStatus(kind) {
+  const el = document.getElementById("sync-status");
+  if (!el) return;
+  const text = { ok: "Synced", saving: "Saving…", offline: "Offline – saved on this device", off: "Sync not set up – this device only", error: "Sync problem – retrying" }[kind];
+  el.textContent = text; el.dataset.kind = kind; el.title = text;
+}
+function tombstone(ids) {
+  state.deletedTx = [...new Set([...(state.deletedTx || []), ...ids])].slice(-3000);
+}
+function normalize(d) {
+  d.archive ||= {}; d.deletedTx ||= []; d.yearStart ||= "2026-10";
+  return d;
+}
+/* Combine this device's copy with the server's: keep every transaction from both,
+   drop any that either side deleted. Plan settings from this device win. */
+function merge(local, server) {
+  server = normalize(structuredClone(server));
+  const dead = new Set([...(local.deletedTx || []), ...server.deletedTx]);
+  const byId = new Map();
+  for (const t of server.tx) byId.set(t.id, t);
+  for (const t of local.tx) byId.set(t.id, t);
+  return {
+    ...local,
+    tx: [...byId.values()].filter(t => !dead.has(t.id)),
+    archive: { ...server.archive, ...(local.archive || {}) },
+    deletedTx: [...dead].slice(-3000)
+  };
+}
+async function api(method, body) {
+  const r = await fetch("/api/data", {
+    method, credentials: "same-origin", cache: "no-store",
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (r.status === 401) { location.href = "/login"; throw new Error("auth"); }
+  let data = null; try { data = await r.json(); } catch {}
+  return { status: r.status, data };
+}
+function schedulePush(delay = 700) {
+  if (sync.disabled) return;
+  clearTimeout(sync.timer);
+  setStatus("saving");
+  sync.timer = setTimeout(push, delay);
+}
+async function push() {
+  if (sync.disabled) return;
+  if (sync.busy) { sync.again = true; return; }
+  sync.busy = true;
+  const sent = sync.changes, force = sync.force;
+  try {
+    const { status, data } = await api("PUT", { baseRev: sync.meta.rev, data: state, force });
+    if (status === 200) {
+      sync.meta.rev = data.rev; sync.force = force ? false : sync.force;
+      if (sync.changes === sent) sync.meta.dirty = false;
+      saveMeta();
+      setStatus(sync.meta.dirty ? "saving" : "ok");
+      if (sync.meta.dirty) sync.again = true;
+    } else if (status === 409) {
+      state = merge(state, data.data || { categories: [], sources: [], tx: [] });
+      sync.meta.rev = data.rev; saveLocal(); saveMeta(); render();
+      sync.again = true;
+    } else if (status === 503 && data?.error === "storage-not-set-up") {
+      sync.disabled = true; setStatus("off");
+    } else if (status === 413) {
+      setStatus("error"); toast("Your data is too big to sync. Close some old months to shrink it.");
+    } else {
+      setStatus("error"); setTimeout(() => schedulePush(0), 15000);
+    }
+  } catch (e) {
+    if (e.message !== "auth") setStatus(navigator.onLine ? "error" : "offline");
+    if (navigator.onLine) setTimeout(() => schedulePush(0), 15000);
+  } finally {
+    sync.busy = false;
+    if (sync.again) { sync.again = false; schedulePush(0); }
+  }
+}
+async function pull() {
+  if (sync.disabled || sync.busy) return;
+  try {
+    const { status, data } = await api("GET");
+    if (status === 503 && data?.error === "storage-not-set-up") { sync.disabled = true; setStatus("off"); return; }
+    if (status !== 200) { setStatus("error"); return; }
+    if (!data.data) {                       // server empty: upload what this device has
+      if (sync.meta.dirty || state.tx.length) { sync.meta.dirty = true; schedulePush(0); } else setStatus("ok");
+      return;
+    }
+    if (sync.meta.dirty) {                  // local edits not yet uploaded: combine, then upload
+      state = merge(state, data.data); sync.meta.rev = data.rev;
+      saveLocal(); saveMeta(); render(); schedulePush(0);
+    } else if (data.rev !== sync.meta.rev) { // another device saved: take its copy
+      state = normalize(data.data); sync.meta.rev = data.rev;
+      saveLocal(); saveMeta(); render(); setStatus("ok");
+    } else setStatus("ok");
+  } catch (e) {
+    if (e.message !== "auth") setStatus(navigator.onLine ? "error" : "offline");
+  }
+}
+addEventListener("online", () => (sync.meta.dirty ? schedulePush(0) : pull()));
+addEventListener("offline", () => setStatus("offline"));
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") (sync.meta.dirty ? schedulePush(0) : pull()); });
 
 /* ---------- dates ---------- */
 const pad = n => String(n).padStart(2, "0");
@@ -237,7 +361,7 @@ function startEdit(id) {
 function removeTx(id) {
   const t = state.tx.find(x => x.id === id); if (!t) return;
   if (!confirm(`Delete this ${money(t.amount)} ${t.type}?`)) return;
-  state.tx = state.tx.filter(x => x.id !== id); save();
+  tombstone([id]); state.tx = state.tx.filter(x => x.id !== id); save();
   if (ui.editing === id) resetForm();
   render(); toast("Transaction deleted");
 }
@@ -355,7 +479,7 @@ $("#restore").addEventListener("change", async e => {
     const d = JSON.parse(await f.text());
     if (!valid(d)) throw new Error();
     if (!confirm("Replace everything in this browser with the backup?")) return;
-    state = d; state.yearStart ||= "2026-10"; save(); render(); toast("Backup restored");
+    state = normalize(d); save({ force: true }); render(); toast("Backup restored");
   } catch { toast("That file isn't a budget backup."); }
 });
 $("#csv").onclick = () => {
@@ -369,7 +493,7 @@ $("#csv").onclick = () => {
 };
 $("#reset").onclick = () => {
   if (!confirm("Erase all transactions and reset the plan? Download a backup first if you might want it back.")) return;
-  state = defaults(); save(); resetForm(); render(); toast("Everything erased");
+  state = defaults(); save({ force: true }); resetForm(); render(); toast("Everything erased");
 };
 
 /* ---------- month end: Excel report + close ---------- */
@@ -587,6 +711,7 @@ $("#me-close").onclick = async () => {
     plannedInc: prev ? prev.plannedInc : Object.fromEntries(state.sources.map(s => [s.id, s.planned || 0])),
     closedAt: Date.now()
   };
+  tombstone(monthTx(ym).map(t => t.id));
   state.tx = state.tx.filter(t => ymOf(t.date) !== ym);
   save(); resetForm(); render(); toast(`${name} closed`);
 };
@@ -615,3 +740,5 @@ function render() {
 document.body.dataset.view = ui.view;
 resetForm();
 render();
+setStatus(sync.meta.dirty ? "saving" : "ok");
+pull();

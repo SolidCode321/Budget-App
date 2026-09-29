@@ -2,7 +2,7 @@
 
 A personal monthly budget tracker. Plain HTML, CSS and JavaScript: no build step, no server, no database.
 
-Your data is stored in your browser's localStorage, on the device you use it on. Nothing is sent anywhere. Use **Plan & settings → Download backup** regularly, and **Restore from backup** to move your data to another device.
+Your data is stored in your own Upstash Redis database (free, set up through Vercel) and syncs across every device you log in on. Each device also keeps a copy so the app works offline.
 
 ## Files
 
@@ -33,6 +33,17 @@ Then redeploy (`vercel --prod`, or *Deployments → ⋯ → Redeploy*). Environm
 - To log out every device at once: change `SESSION_SECRET` and redeploy.
 - Wrong passwords get a 1-second delay to slow down guessing.
 
+## Online storage (sync between devices)
+
+Your budget is saved in a free Upstash Redis database connected through Vercel. It's reached only through `/api/data`, which the login protects.
+
+1. On vercel.com open your project → **Storage** → **Create Database** (or *Browse Marketplace*) → **Upstash for Redis** → free plan → **Connect to project**. Vercel adds `KV_REST_API_URL` and `KV_REST_API_TOKEN` for you.
+2. Redeploy.
+
+The top bar shows the sync state: *Synced*, *Saving…*, *Offline – saved on this device* (it uploads when you're back online), or *Sync not set up* (the database isn't connected yet; data stays on the device).
+
+If two devices change things at the same time, the app keeps every transaction from both and drops any that either device deleted.
+
 ## Deploy to Vercel (free)
 
 **Option A – from your terminal, no Git needed**
@@ -62,5 +73,4 @@ The Excel export uses ExcelJS (MIT licence), bundled in `vendor/` so no outside 
 
 - Data on your laptop and on your phone are separate (each browser keeps its own copy). Use backup/restore to copy between them.
 - Clearing your browser's site data erases the budget. Keep a recent backup.
-- The login protects the site. Your budget data itself still lives in each browser's storage, so it doesn't sync between devices – use backup/restore for that.
 - `vercel dev` runs the login locally too; put the three variables in a `.env.local` file (it's git-ignored).

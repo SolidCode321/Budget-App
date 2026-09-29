@@ -44,6 +44,12 @@ header{background:var(--ink);color:#fff}
 .brand svg{flex:none}
 nav{display:flex;gap:4px;width:100%}
 .logout button{background:none;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:500}
+.sync{font-size:.8rem;color:#c7d0e6;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.sync::before{content:"";width:8px;height:8px;border-radius:50%;background:#6eca97}
+.sync[data-kind=saving]::before{background:#ffcd00}
+.sync[data-kind=offline]::before,.sync[data-kind=off]::before{background:#98a2b8}
+.sync[data-kind=error]::before{background:#ff6b7d}
+@media (max-width:640px){.sync{max-width:44vw;overflow:hidden;text-overflow:ellipsis}}
 .logout button:hover{background:rgba(255,255,255,.1)}
 nav button{background:none;border:0;color:#c7d0e6;padding:10px 14px 12px;font:600 1rem var(--cond);cursor:pointer;border-bottom:4px solid transparent}
 nav button[aria-selected=true]{color:#fff;border-bottom-color:#ffcd00}
@@ -229,6 +235,7 @@ td.zero{color:var(--muted)}
       <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#ffcd00"/><text x="16" y="22" text-anchor="middle" font-family="Barlow Semi Condensed,Arial" font-weight="700" font-size="17" fill="#14264f">€</text></svg>
       Budget
     </div>
+    <span class="sync" id="sync-status" role="status" aria-live="polite"></span>
     <form method="post" action="/logout" class="logout"><button type="submit">Log out</button></form>
     <nav role="tablist" aria-label="Sections">
       <button role="tab" data-view="month" aria-selected="true">Month</button>
@@ -337,7 +344,7 @@ td.zero{color:var(--muted)}
 
     <section class="card">
       <h2>Your data</h2>
-      <p class="hint">Everything is saved in this browser only, on this device. Download a backup now and then, and use it to move your data to another phone or laptop.</p>
+      <p class="hint">Your budget is saved to your private online storage and syncs to every device you log in on. A copy is also kept on this device, so it works offline and syncs when you reconnect. Backups are still handy as an extra safety copy.</p>
       <div class="row">
         <button class="ghost" id="backup">Download backup</button>
         <label class="ghost" style="cursor:pointer">Restore from backup<input type="file" id="restore" accept="application/json,.json" hidden></label>

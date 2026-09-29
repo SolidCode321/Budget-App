@@ -1,6 +1,8 @@
 // Login gate for the Budget app. Runs on Vercel before any file is served.
 // Credentials live in Vercel environment variables, never in this code:
 //   APP_USERNAME, APP_PASSWORD, SESSION_SECRET
+// Your budget is stored in Upstash Redis (Vercel → Storage), which sets
+//   KV_REST_API_URL, KV_REST_API_TOKEN
 import { next } from "@vercel/functions";
 
 const COOKIE = "__Host-budget_session";
@@ -108,6 +110,59 @@ ${msg}
   return new Response(html, { status: error ? 401 : 200, headers: { "Content-Type": "text/html; charset=utf-8", ...SEC_HEADERS } });
 }
 
+/* ---------- data API: stores your budget in Upstash Redis ---------- */
+const DATA_KEY = "budget:state";
+const MAX_BODY = 2_000_000; // 2 MB is years of transactions
+
+function json(body, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+}
+function kvConfig() {
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  return url && token ? { url: url.replace(/\/$/, ""), token } : null;
+}
+async function kv(cfg, command) {
+  const r = await fetch(cfg.url, { method: "POST", headers: { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json" }, body: JSON.stringify(command) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok || out.error) throw new Error(out.error || `KV ${r.status}`);
+  return out.result;
+}
+function validData(d) {
+  return d && typeof d === "object" && Array.isArray(d.categories) && Array.isArray(d.sources) && Array.isArray(d.tx);
+}
+
+async function dataApi(request) {
+  const cfg = kvConfig();
+  if (!cfg) return json({ error: "storage-not-set-up" }, 503);
+  try {
+    if (request.method === "GET") {
+      const raw = await kv(cfg, ["GET", DATA_KEY]);
+      if (!raw) return json({ rev: 0, data: null });
+      const saved = JSON.parse(raw);
+      return json({ rev: saved.rev, data: saved.data, savedAt: saved.savedAt });
+    }
+    if (request.method === "PUT") {
+      if (!sameOrigin(request)) return json({ error: "forbidden" }, 403);
+      const text = await request.text();
+      if (text.length > MAX_BODY) return json({ error: "too-large" }, 413);
+      let body;
+      try { body = JSON.parse(text); } catch { return json({ error: "bad-json" }, 400); }
+      if (!validData(body.data) || !Number.isInteger(body.baseRev)) return json({ error: "bad-data" }, 400);
+      const raw = await kv(cfg, ["GET", DATA_KEY]);
+      const current = raw ? JSON.parse(raw) : { rev: 0, data: null };
+      // Another device saved since this one last synced: send its copy back to merge.
+      if (!body.force && body.baseRev !== current.rev) return json({ error: "conflict", rev: current.rev, data: current.data }, 409);
+      const rev = current.rev + 1;
+      await kv(cfg, ["SET", DATA_KEY, JSON.stringify({ rev, data: body.data, savedAt: Date.now() })]);
+      return json({ rev });
+    }
+    return json({ error: "method-not-allowed" }, 405);
+  } catch {
+    return json({ error: "storage-error" }, 502);
+  }
+}
+
 /* ---------- main ---------- */
 export default async function middleware(request) {
   const env = { user: process.env.APP_USERNAME, pass: process.env.APP_PASSWORD, secret: process.env.SESSION_SECRET };
@@ -151,6 +206,8 @@ export default async function middleware(request) {
     if (request.method !== "POST" || !sameOrigin(request)) return new Response("Method not allowed", { status: 405 });
     return redirect("/login", request, { "Set-Cookie": `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict` });
   }
+
+  if (path === "/api/data") return loggedIn ? dataApi(request) : json({ error: "not-logged-in" }, 401);
 
   if (PUBLIC_FILES.has(path) || loggedIn) return next();
 
