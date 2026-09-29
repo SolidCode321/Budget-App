@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Budget</title>
+<meta name="theme-color" content="#14264f">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#eef1f6; --surface:#ffffff; --ink:#14264f; --text:#1c2333; --muted:#5d6678;
+  --line:#d6dbe5; --ok:#007852; --bad:#c8102e; --warn:#b77a00; --focus:#003ca6;
+  --field:#f6f8fb;
+  --sans:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --cond:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0d1424;--surface:#16203a;--ink:#dfe6f5;--text:#e4e8f1;--muted:#98a2b8;--line:#2b3753;--ok:#3fbf8c;--bad:#ff6b7d;--warn:#e7b04a;--focus:#7fa8ff;--field:#1c2743}
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.wrap{max-width:980px;margin:0 auto;padding:16px}
+
+/* header */
+header{background:var(--ink);color:#fff}
+@media (prefers-color-scheme:dark){header{background:#0a1020;border-bottom:1px solid var(--line)}}
+.head{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-top:14px;padding-bottom:0}
+.brand{font:700 1.35rem/1 var(--cond);letter-spacing:.01em;margin-right:auto;display:flex;align-items:center;gap:10px}
+.brand svg{flex:none}
+nav{display:flex;gap:4px;width:100%}
+nav button{background:none;border:0;color:#c7d0e6;padding:10px 14px 12px;font:600 1rem var(--cond);cursor:pointer;border-bottom:4px solid transparent}
+nav button[aria-selected=true]{color:#fff;border-bottom-color:#ffcd00}
+
+/* month switcher */
+.month-bar{display:flex;align-items:center;gap:8px;margin:18px 0 10px}
+.month-bar h1{font:700 clamp(1.7rem,4vw,2.3rem)/1.1 var(--cond);margin:0 6px;color:var(--ink);min-width:9ch}
+.iconbtn{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--surface);cursor:pointer;display:grid;place-items:center;font-size:1.2rem}
+.linkbtn{background:none;border:0;color:var(--focus);cursor:pointer;text-decoration:underline;padding:4px}
+
+/* the "departure board" panel */
+.board{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;display:grid;grid-template-columns:1.3fr 1fr;gap:18px}
+.left-label{color:var(--muted);font-weight:500}
+.left-amt{font:700 clamp(2.4rem,7vw,3.6rem)/1 var(--cond);color:var(--ink);margin:4px 0 6px;font-variant-numeric:tabular-nums}
+.left-amt.neg{color:var(--bad)}
+.left-sub{color:var(--muted);font-size:.95rem}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;align-content:center}
+.stat span{display:block;color:var(--muted);font-size:.85rem}
+.stat b{font:600 1.25rem var(--cond);font-variant-numeric:tabular-nums}
+.track{grid-column:1/-1;height:12px;border-radius:6px;background:var(--field);border:1px solid var(--line);overflow:hidden;position:relative}
+.track i{display:block;height:100%;background:var(--ok);transition:width .3s}
+.track i.over{background:var(--bad)}
+@media (max-width:640px){.board{grid-template-columns:1fr}}
+
+/* sections */
+section.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 20px;margin-top:16px}
+h2{font:700 1.3rem/1.2 var(--cond);margin:0 0 12px;color:var(--ink)}
+.hint{color:var(--muted);font-size:.9rem;margin:-6px 0 12px}
+
+/* quick add */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:3px;margin-bottom:12px;background:var(--field)}
+.seg button{border:0;background:none;padding:6px 16px;border-radius:999px;cursor:pointer;font-weight:600}
+.seg button[aria-pressed=true]{background:var(--ink);color:#fff}
+@media (prefers-color-scheme:dark){.seg button[aria-pressed=true]{background:#dfe6f5;color:#0d1424}}
+.form{display:grid;grid-template-columns:140px 1fr 150px;gap:10px}
+.form .note{grid-column:1/3}
+.form .actions{grid-column:1/-1;display:flex;gap:10px;align-items:center}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted);font-weight:500}
+input,select{background:var(--field);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%;min-width:0;color:var(--text)}
+input.amount{font:600 1.2rem var(--cond)}
+.primary{background:var(--ink);color:#fff;border:0;border-radius:8px;padding:11px 20px;font-weight:600;cursor:pointer}
+@media (prefers-color-scheme:dark){.primary{background:#ffcd00;color:#0d1424}}
+.ghost{background:none;border:1px solid var(--line);border-radius:8px;padding:10px 16px;cursor:pointer}
+.danger{color:var(--bad)}
+@media (max-width:640px){.form{grid-template-columns:1fr}.form .note{grid-column:auto}.month-bar h1{font-size:1.6rem;white-space:nowrap}}
+
+/* category lines */
+.lines{list-style:none;margin:0;padding:0}
+.lines li{display:grid;grid-template-columns:34px 1fr auto;gap:4px 12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.lines li:first-child{border-top:0}
+.badge{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:700 1rem var(--cond);grid-row:span 2}
+.lname{font-weight:600}
+.lnums{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.lnums small{display:block;color:var(--muted);font-size:.82rem}
+.lnums .over{color:var(--bad);font-weight:600}
+.lbar{grid-column:2/-1;height:6px;border-radius:3px;background:var(--field);overflow:hidden}
+.lbar i{display:block;height:100%}
+
+/* transactions */
+.tx{list-style:none;margin:0;padding:0}
+.tx li{display:grid;grid-template-columns:62px 1fr auto auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.tx li:first-child{border-top:0}
+.tx .d{font:600 .95rem var(--cond);color:var(--muted);white-space:nowrap}
+.tx .t small{display:block;color:var(--muted);font-size:.82rem}
+.tx .a{font:600 1.05rem var(--cond);font-variant-numeric:tabular-nums}
+.tx .a.in{color:var(--ok)}
+.tx .ops{display:flex;gap:2px}
+.tx .ops button{background:none;border:0;cursor:pointer;padding:6px;color:var(--muted);border-radius:6px}
+.tx .ops button:hover{color:var(--text);background:var(--field)}
+.empty{color:var(--muted);padding:12px 0}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:baseline}
+
+/* year table */
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:100%}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-size:.92rem}
+th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--surface)}
+thead th{font:600 .95rem var(--cond);color:var(--muted)}
+thead th button{background:none;border:0;cursor:pointer;color:inherit;font:inherit;text-decoration:underline dotted}
+tr.tot td{font-weight:600;background:var(--field)}
+tr.tot td:first-child{background:var(--field)}
+td.neg{color:var(--bad)}
+td.zero{color:var(--muted)}
+
+/* settings */
+.edit-list{list-style:none;margin:0 0 10px;padding:0}
+.edit-list li{display:grid;grid-template-columns:18px 1fr 130px 40px;gap:10px;align-items:center;padding:6px 0}
+.edit-list .del{background:none;border:0;cursor:pointer;color:var(--muted);font-size:1.1rem;border-radius:6px;height:38px}
+.edit-list .del:hover{color:var(--bad);background:var(--field)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.total-line{display:flex;justify-content:space-between;font-weight:600;border-top:1px solid var(--line);padding-top:10px}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .2s}
+@media (prefers-color-scheme:dark){.toast{background:#dfe6f5;color:#0d1424}}
+.toast.show{opacity:1}
+[hidden]{display:none!important}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap head">
+    <div class="brand">
+      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#ffcd00"/><text x="16" y="22" text-anchor="middle" font-family="Barlow Semi Condensed,Arial" font-weight="700" font-size="17" fill="#14264f">€</text></svg>
+      Budget
+    </div>
+    <nav role="tablist" aria-label="Sections">
+      <button role="tab" data-view="month" aria-selected="true">Month</button>
+      <button role="tab" data-view="year" aria-selected="false">Year</button>
+      <button role="tab" data-view="settings" aria-selected="false">Plan &amp; settings</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- MONTH -->
+  <div id="view-month">
+    <div class="month-bar">
+      <button class="iconbtn" id="prev" aria-label="Previous month">‹</button>
+      <h1 id="month-title"></h1>
+      <button class="iconbtn" id="next" aria-label="Next month">›</button>
+      <button class="linkbtn" id="today" hidden>Back to this month</button>
+    </div>
+
+    <div class="board" aria-live="polite">
+      <div>
+        <div class="left-label" id="left-label">Left to spend</div>
+        <div class="left-amt" id="left-amt"></div>
+        <div class="left-sub" id="left-sub"></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><span>Spent</span><b id="s-spent"></b></div>
+        <div class="stat"><span>Planned spending</span><b id="s-planned"></b></div>
+        <div class="stat"><span>Income received</span><b id="s-income"></b></div>
+        <div class="stat"><span>Saved so far</span><b id="s-saved"></b></div>
+        <div class="track" role="img" id="track-label"><i id="track"></i></div>
+      </div>
+    </div>
+
+    <section class="card" id="add">
+      <h2 id="form-title">Add a transaction</h2>
+      <div class="seg" role="group" aria-label="Type">
+        <button type="button" data-type="expense" aria-pressed="true">Expense</button>
+        <button type="button" data-type="income" aria-pressed="false">Income</button>
+      </div>
+      <form class="form" id="tx-form" novalidate>
+        <label class="f amt">Amount (€)<input class="amount" id="f-amount" inputmode="decimal" autocomplete="off" placeholder="0.00" required></label>
+        <label class="f cat"><span id="f-cat-label">Category</span><select id="f-cat"></select></label>
+        <label class="f date">Date<input type="date" id="f-date" required></label>
+        <label class="f note">Note<input id="f-note" maxlength="120" placeholder="e.g. Lidl, Navigo, dinner with friends"></label>
+        <label class="f" id="f-method-wrap">Paid with<select id="f-method"><option>Card</option><option>Cash</option><option>Bank transfer</option><option>UPI / wallet</option><option>Other</option></select></label>
+        <div class="actions">
+          <button class="primary" type="submit" id="f-submit">Add expense</button>
+          <button class="ghost" type="button" id="f-cancel" hidden>Cancel editing</button>
+          <span class="danger" id="f-error" role="alert"></span>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Spending by category</h2>
+      <ul class="lines" id="lines"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Transactions this month</h2>
+      <ul class="tx" id="tx-list"></ul>
+    </section>
+  </div>
+
+  <!-- YEAR -->
+  <div id="view-year" hidden>
+    <section class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <h2 style="margin:0">Twelve months at a glance</h2>
+        <label class="f" style="flex-direction:row;align-items:center;gap:8px">Starting from <input type="month" id="year-start" style="width:auto"></label>
+      </div>
+      <p class="hint">Tap a month to open it. Averages count only months where you logged spending.</p>
+      <div class="scroll"><table id="year-table"></table></div>
+    </section>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="view-settings" hidden>
+    <section class="card">
+      <h2>Monthly spending plan</h2>
+      <p class="hint">Rename categories or change amounts here. Past transactions follow the rename automatically.</p>
+      <ul class="edit-list" id="cat-edit"></ul>
+      <div class="row" style="justify-content:space-between">
+        <button class="ghost" id="add-cat">Add category</button>
+      </div>
+      <p class="total-line"><span>Planned spending per month</span><span id="plan-total"></span></p>
+    </section>
+
+    <section class="card">
+      <h2>Expected income</h2>
+      <p class="hint">What you expect to receive in a typical month.</p>
+      <ul class="edit-list" id="src-edit"></ul>
+      <button class="ghost" id="add-src">Add income source</button>
+      <p class="total-line"><span>Expected income per month</span><span id="inc-total"></span></p>
+    </section>
+
+    <section class="card">
+      <h2>Your data</h2>
+      <p class="hint">Everything is saved in this browser only, on this device. Download a backup now and then, and use it to move your data to another phone or laptop.</p>
+      <div class="row">
+        <button class="ghost" id="backup">Download backup</button>
+        <label class="ghost" style="cursor:pointer">Restore from backup<input type="file" id="restore" accept="application/json,.json" hidden></label>
+        <button class="ghost" id="csv">Export transactions (CSV)</button>
+        <button class="ghost danger" id="reset">Erase everything</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
