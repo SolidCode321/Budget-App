@@ -205,6 +205,15 @@ td.zero{color:var(--muted)}
       <h2>Transactions this month</h2>
       <ul class="tx" id="tx-list"></ul>
     </section>
+
+    <section class="card">
+      <h2>Month end</h2>
+      <p class="hint" id="me-text" style="margin-top:0"></p>
+      <div class="row">
+        <button class="primary" id="me-close">Close month</button>
+        <button class="ghost" id="me-excel">Download Excel report only</button>
+      </div>
+    </section>
   </div>
 
   <!-- YEAR -->
@@ -223,7 +232,7 @@ td.zero{color:var(--muted)}
   <div id="view-settings" hidden>
     <section class="card">
       <h2>Monthly spending plan</h2>
-      <p class="hint">Rename categories or change amounts here. Past transactions follow the rename automatically.</p>
+      <p class="hint">Type a new amount and tap outside the box – it saves straight away. Changes apply to the current month and every month after it; months you have already closed keep the plan they had.</p>
       <ul class="edit-list" id="cat-edit"></ul>
       <div class="row" style="justify-content:space-between">
         <button class="ghost" id="add-cat">Add category</button>

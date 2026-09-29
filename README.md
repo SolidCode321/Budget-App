@@ -10,6 +10,7 @@ Your data is stored in your browser's localStorage, on the device you use it on.
 - `app.js` – all the app logic
 - `manifest.json`, `icon.svg` – lets you "Add to Home Screen" on your phone
 - `vercel.json` – security headers (CSP etc.) for Vercel
+- `vendor/exceljs.min.js` – library used to build the Excel report
 
 ## Deploy to Vercel (free)
 
@@ -29,6 +30,12 @@ Your data is stored in your browser's localStorage, on the device you use it on.
 Open your Vercel URL, then:
 - iPhone (Safari): Share → *Add to Home Screen*
 - Android (Chrome): menu → *Add to Home screen* / *Install app*
+
+## Month end
+
+On the Month screen, **Close month** downloads an Excel report of that month (Budget, Expenses and Income tabs, with live formulas), then asks before clearing the month's entries from the app. Your plan and the month's totals are kept, so the Year view still works. **Download Excel report only** gives you the file without clearing anything.
+
+The Excel export uses ExcelJS (MIT licence), bundled in `vendor/` so no outside scripts are loaded.
 
 ## Notes
 

@@ -23,6 +23,7 @@ function defaults() {
     categories: cats.map(([name, planned], i) => ({ id: uid() + i, name, planned, color: COLORS[i % COLORS.length] })),
     sources: srcs.map(([name, planned], i) => ({ id: uid() + "s" + i, name, planned })),
     tx: [],
+    archive: {},
     yearStart: "2026-10"
   };
 }
@@ -33,7 +34,9 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return defaults();
     const d = JSON.parse(raw);
-    return valid(d) ? d : defaults();
+    if (!valid(d)) return defaults();
+    d.archive ||= {};
+    return d;
   } catch { return defaults(); }
 }
 function save() {
@@ -95,20 +98,32 @@ function badge(c) {
 /* ---------- month view ---------- */
 function monthTx(ym) { return state.tx.filter(t => ymOf(t.date) === ym); }
 
+/* Combines entries still in the app with totals kept from a closed month. */
+function monthData(ym) {
+  const arch = state.archive[ym];
+  const txs = monthTx(ym);
+  const spentBy = { ...(arch ? arch.cats : {}) };
+  let income = arch ? arch.income : 0;
+  for (const t of txs) {
+    if (t.type === "income") income += t.amount;
+    else spentBy[t.catId] = (spentBy[t.catId] || 0) + t.amount;
+  }
+  const spent = Object.values(spentBy).reduce((a, b) => a + b, 0);
+  const plannedOf = c => arch ? (arch.planned[c.id] || 0) : (c.planned || 0);
+  const planned = state.categories.reduce((a, c) => a + plannedOf(c), 0);
+  return { arch, txs, spentBy, spent, income, planned, plannedOf };
+}
+
 function renderMonth() {
+  renderMonthEnd();
   const ym = ui.month;
   $("#month-title").textContent = monthName(ym);
   $("#today").hidden = ym === ymOf(todayISO());
 
-  const txs = monthTx(ym);
-  const exp = txs.filter(t => t.type === "expense");
-  const inc = txs.filter(t => t.type === "income");
-  const spent = exp.reduce((a, t) => a + t.amount, 0);
-  const income = inc.reduce((a, t) => a + t.amount, 0);
-  const planned = state.categories.reduce((a, c) => a + (c.planned || 0), 0);
+  const { arch, txs, spentBy, spent, income, planned, plannedOf } = monthData(ym);
   const left = planned - spent;
-
-  $("#left-label").textContent = left >= 0 ? `Left to spend in ${monthName(ym).split(" ")[0]}` : `Over plan in ${monthName(ym).split(" ")[0]}`;
+  const mShort = monthName(ym).split(" ")[0];
+  $("#left-label").textContent = left >= 0 ? `Left to spend in ${mShort}` : `Over plan in ${mShort}`;
   const la = $("#left-amt"); la.textContent = money(Math.abs(left)); la.classList.toggle("neg", left < 0);
   const pct = planned > 0 ? spent / planned : 0;
   $("#left-sub").textContent = planned > 0
@@ -123,21 +138,20 @@ function renderMonth() {
   $("#track-label").setAttribute("aria-label", `${Math.round(pct * 100)} percent of planned spending used`);
 
   // category lines
-  const byCat = {};
-  for (const t of exp) byCat[t.catId] = (byCat[t.catId] || 0) + t.amount;
+  const byCat = spentBy;
   const ul = $("#lines"); ul.replaceChildren();
-  const rows = state.categories.map(c => ({ c, s: byCat[c.id] || 0 }));
+  const rows = state.categories.map(c => ({ c, s: byCat[c.id] || 0, pl: plannedOf(c) }));
   const orphan = Object.entries(byCat).filter(([id]) => !catById(id)).reduce((a, [, v]) => a + v, 0);
-  for (const { c, s } of rows) {
-    if (!c.planned && !s) continue;
-    const rem = (c.planned || 0) - s;
-    const p = c.planned > 0 ? Math.min(1, s / c.planned) : (s > 0 ? 1 : 0);
+  for (const { c, s, pl } of rows) {
+    if (!pl && !s) continue;
+    const rem = pl - s;
+    const p = pl > 0 ? Math.min(1, s / pl) : (s > 0 ? 1 : 0);
     const over = rem < 0;
     ul.append(el("li", {},
       badge(c),
       el("div", { class: "lname" }, c.name),
       el("div", { class: "lnums" },
-        `${money(s)} `, el("span", { style: "color:var(--muted)" }, `of ${money(c.planned || 0)}`),
+        `${money(s)} `, el("span", { style: "color:var(--muted)" }, `of ${money(pl)}`),
         el("small", { class: over ? "over" : "" }, over ? `${money(-rem)} over` : `${money(rem)} left`)),
       el("div", { class: "lbar" }, el("i", { style: `width:${p * 100}%;background:${over ? "var(--bad)" : c.color}` }))
     ));
@@ -149,7 +163,9 @@ function renderMonth() {
   // transactions
   const list = $("#tx-list"); list.replaceChildren();
   const sorted = [...txs].sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
-  if (!sorted.length) list.append(el("li", { class: "empty", style: "display:block" }, "Nothing logged for this month yet. Add your first expense above."));
+  if (!sorted.length) list.append(el("li", { class: "empty", style: "display:block" },
+    arch ? "This month's entries were cleared when you closed it. They're in the Excel report you downloaded."
+         : "Nothing logged for this month yet. Add your first expense above."));
   for (const t of sorted) {
     const isInc = t.type === "income";
     const who = isInc ? srcById(t.catId) : catById(t.catId);
@@ -231,12 +247,13 @@ function renderYear() {
   $("#year-start").value = state.yearStart;
   const months = Array.from({ length: 12 }, (_, i) => addMonths(state.yearStart, i));
   const grid = {}, incM = {}, expM = {};
-  for (const t of state.tx) {
-    const ym = ymOf(t.date); if (!months.includes(ym)) continue;
-    if (t.type === "income") { incM[ym] = (incM[ym] || 0) + t.amount; continue; }
-    expM[ym] = (expM[ym] || 0) + t.amount;
-    const k = catById(t.catId) ? t.catId : "__deleted";
-    (grid[k] ||= {})[ym] = (grid[k][ym] || 0) + t.amount;
+  for (const m of months) {
+    const d = monthData(m);
+    incM[m] = d.income; expM[m] = d.spent;
+    for (const [id, v] of Object.entries(d.spentBy)) {
+      const k = catById(id) ? id : "__deleted";
+      (grid[k] ||= {})[m] = (grid[k][m] || 0) + v;
+    }
   }
   const activeMonths = months.filter(m => expM[m] > 0).length;
   const cell = (v, extra = "") => el("td", { class: (v === 0 ? "zero " : v < 0 ? "neg " : "") + extra }, v === 0 ? "–" : money(v));
@@ -333,6 +350,225 @@ $("#csv").onclick = () => {
 $("#reset").onclick = () => {
   if (!confirm("Erase all transactions and reset the plan? Download a backup first if you might want it back.")) return;
   state = defaults(); save(); resetForm(); render(); toast("Everything erased");
+};
+
+/* ---------- month end: Excel report + close ---------- */
+function renderMonthEnd() {
+  const ym = ui.month, arch = state.archive[ym], n = monthTx(ym).length;
+  const name = monthName(ym);
+  const p = $("#me-text");
+  if (arch && !n) p.textContent = `You closed ${name} on ${new Date(arch.closedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}. Its totals stay in the Month and Year views.`;
+  else if (arch) p.textContent = `${name} was closed before, and you've added ${n} entr${n === 1 ? "y" : "ies"} since. Close it again to include them.`;
+  else p.textContent = `When ${name} is over, close it: you get an Excel report of the month, and its entries are cleared from the app. Your plan and the month's totals are kept.`;
+  $("#me-close").hidden = n === 0;
+  $("#me-close").textContent = `Close ${name}`;
+  $("#me-excel").disabled = !n && !arch;
+  $("#me-excel").textContent = n ? "Download Excel report only" : "Download Excel report";
+}
+
+let excelLoading;
+function loadExcelJS() {
+  if (window.ExcelJS) return Promise.resolve();
+  return excelLoading ||= new Promise((res, rej) => {
+    const sc = el("script", { src: "vendor/exceljs.min.js" });
+    sc.onload = res; sc.onerror = () => { excelLoading = null; rej(new Error("load")); };
+    document.head.append(sc);
+  });
+}
+
+async function exportExcel(ym) {
+  await loadExcelJS();
+  const d = monthData(ym), arch = d.arch;
+  const txs = [...d.txs].sort((a, b) => a.date.localeCompare(b.date) || a.created - b.created);
+  const EUR = '€#,##0.00;[Red]-€#,##0.00;"-"';
+  const ARIAL = (o = {}) => ({ name: "Arial", size: 10, ...o });
+  const NAVY = "FF1F3864", SUBFILL = "FFD9E1F2", YEL = "FFFFF2CC";
+  const fill = argb => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
+  const thin = { style: "thin", color: { argb: "FFBFBFBF" } };
+  const box = { top: thin, left: thin, bottom: thin, right: thin };
+  const xDate = iso => { const [y, m, dd] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd)); };
+
+  const expName = t => catById(t.catId)?.name ?? "Deleted category";
+  const incName = t => srcById(t.catId)?.name ?? "Deleted source";
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Budget app";
+  const b = wb.addWorksheet("Budget", { views: [{ showGridLines: false, state: "frozen", ySplit: 6 }] });
+  const ex = wb.addWorksheet("Expenses", { views: [{ state: "frozen", ySplit: 1 }] });
+  const inc = wb.addWorksheet("Income", { views: [{ state: "frozen", ySplit: 1 }] });
+  b.properties.tabColor = { argb: NAVY }; ex.properties.tabColor = { argb: "FFC00000" }; inc.properties.tabColor = { argb: "FF2E7D32" };
+
+  /* --- log sheets --- */
+  function logSheet(ws, headers, widths, rows, listRange) {
+    ws.columns = widths.map(w => ({ width: w }));
+    const h = ws.getRow(1);
+    headers.forEach((t, i) => {
+      const c = h.getCell(i + 1); c.value = t; c.font = ARIAL({ bold: true, color: { argb: "FFFFFFFF" } });
+      c.fill = fill(NAVY); c.alignment = { horizontal: "center" }; c.border = box;
+    });
+    rows.forEach((r, i) => {
+      const row = ws.getRow(i + 2);
+      r.forEach((v, j) => { const c = row.getCell(j + 1); c.value = v; c.font = ARIAL({ color: { argb: "FF0000FF" } }); });
+      row.getCell(1).numFmt = "dd/mm/yyyy"; row.getCell(4).numFmt = EUR;
+    });
+    const last = Math.max(rows.length + 1, 2) + 200;
+    for (let r = rows.length + 2; r <= last; r++) {
+      ws.getCell(r, 1).numFmt = "dd/mm/yyyy"; ws.getCell(r, 4).numFmt = EUR;
+      for (let c = 1; c <= headers.length; c++) ws.getCell(r, c).font = ARIAL({ color: { argb: "FF0000FF" } });
+    }
+    for (let r = 2; r <= last; r++) ws.getCell(r, 2).dataValidation = { type: "list", allowBlank: true, formulae: [listRange] };
+    ws.autoFilter = { from: "A1", to: { row: 1, column: headers.length } };
+  }
+
+  /* --- budget rows --- */
+  const srcRows = state.sources.map(s => ({ name: s.name, planned: arch ? (arch.plannedInc?.[s.id] || 0) : (s.planned || 0) }));
+  if (txs.some(t => t.type === "income" && !srcById(t.catId))) srcRows.push({ name: "Deleted source", planned: 0 });
+  const archIncome = arch ? arch.income : 0;
+
+  const catRows = state.categories.map(c => ({ name: c.name, planned: d.plannedOf(c), archived: arch ? (arch.cats[c.id] || 0) : 0 }));
+  const orphanArch = arch ? Object.entries(arch.cats).filter(([id]) => !catById(id)).reduce((a, [, v]) => a + v, 0) : 0;
+  if (orphanArch || txs.some(t => t.type === "expense" && !catById(t.catId)))
+    catRows.push({ name: "Deleted category", planned: 0, archived: orphanArch });
+
+  const expTx = txs.filter(t => t.type === "expense"), incTx = txs.filter(t => t.type === "income");
+  const sumExp = n => expTx.filter(t => expName(t) === n).reduce((a, t) => a + t.amount, 0);
+  const sumInc = n => incTx.filter(t => incName(t) === n).reduce((a, t) => a + t.amount, 0);
+
+  b.columns = [{ width: 30 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 12 }];
+  b.getCell("A1").value = `Monthly Budget – ${monthName(ym)}`;
+  b.getCell("A1").font = ARIAL({ bold: true, size: 16, color: { argb: NAVY } });
+  b.getCell("A2").value = "Exported from your Budget app. Blue numbers are inputs; everything else is a formula. Add rows on the Expenses or Income tab and the totals update.";
+  b.getCell("A2").font = ARIAL({ italic: true, size: 9, color: { argb: "FF595959" } });
+  b.getCell("A4").value = "Month"; b.getCell("A4").font = ARIAL({ bold: true });
+  b.getCell("B4").value = xDate(ym + "-01"); b.getCell("B4").numFmt = "mmmm yyyy"; b.getCell("B4").font = ARIAL({ bold: true });
+
+  const header = (r, title) => ["" + title, "Planned", "Actual", "Difference", "% of plan"].forEach((t, i) => {
+    const c = b.getCell(r, i + 1); c.value = t; c.font = ARIAL({ bold: true, color: { argb: "FFFFFFFF" } }); c.fill = fill(NAVY);
+    c.alignment = { horizontal: i ? "center" : "left" };
+  });
+
+  const incStart = 13;
+  header(incStart - 1, "Income");
+  let r = incStart, incTotal = 0, incPlan = 0;
+  for (const s of srcRows) {
+    const act = sumInc(s.name) + (s.name === srcRows[0].name ? archIncome : 0);
+    const archPart = s.name === srcRows[0].name && archIncome ? `+${archIncome}` : "";
+    b.getCell(r, 1).value = s.name;
+    b.getCell(r, 2).value = s.planned; b.getCell(r, 2).font = ARIAL({ color: { argb: "FF0000FF" } }); b.getCell(r, 2).fill = fill(YEL);
+    b.getCell(r, 3).value = { formula: `SUMIFS(Income!$D:$D,Income!$B:$B,$A${r})${archPart}`, result: act };
+    b.getCell(r, 4).value = { formula: `C${r}-B${r}`, result: act - s.planned };
+    b.getCell(r, 5).value = { formula: `IF(B${r}=0,"",C${r}/B${r})`, result: s.planned ? act / s.planned : "" };
+    incTotal += act; incPlan += s.planned; r++;
+  }
+  const incEnd = r - 1, incTot = r;
+  b.getCell(incTot, 1).value = "Total income";
+  b.getCell(incTot, 2).value = { formula: `SUM(B${incStart}:B${incEnd})`, result: incPlan };
+  b.getCell(incTot, 3).value = { formula: `SUM(C${incStart}:C${incEnd})`, result: incTotal };
+  b.getCell(incTot, 4).value = { formula: `C${incTot}-B${incTot}`, result: incTotal - incPlan };
+  b.getCell(incTot, 5).value = { formula: `IF(B${incTot}=0,"",C${incTot}/B${incTot})`, result: incPlan ? incTotal / incPlan : "" };
+
+  const exH = incTot + 2, exStart = exH + 1;
+  header(exH, "Expenses");
+  r = exStart; let expTotal = 0, expPlan = 0;
+  for (const c of catRows) {
+    const act = sumExp(c.name) + c.archived;
+    b.getCell(r, 1).value = c.name; b.getCell(r, 1).fill = fill(YEL);
+    b.getCell(r, 2).value = c.planned; b.getCell(r, 2).font = ARIAL({ color: { argb: "FF0000FF" } }); b.getCell(r, 2).fill = fill(YEL);
+    b.getCell(r, 3).value = { formula: `SUMIFS(Expenses!$D:$D,Expenses!$B:$B,$A${r})${c.archived ? "+" + c.archived : ""}`, result: act };
+    b.getCell(r, 4).value = { formula: `B${r}-C${r}`, result: c.planned - act };
+    b.getCell(r, 5).value = { formula: `IF(B${r}=0,"",C${r}/B${r})`, result: c.planned ? act / c.planned : "" };
+    expTotal += act; expPlan += c.planned; r++;
+  }
+  const exEnd = r - 1, exTot = r;
+  b.getCell(exTot, 1).value = "Total expenses";
+  b.getCell(exTot, 2).value = { formula: `SUM(B${exStart}:B${exEnd})`, result: expPlan };
+  b.getCell(exTot, 3).value = { formula: `SUM(C${exStart}:C${exEnd})`, result: expTotal };
+  b.getCell(exTot, 4).value = { formula: `B${exTot}-C${exTot}`, result: expPlan - expTotal };
+  b.getCell(exTot, 5).value = { formula: `IF(B${exTot}=0,"",C${exTot}/B${exTot})`, result: expPlan ? expTotal / expPlan : "" };
+
+  // summary block
+  header(6, "Summary");
+  const sum = [
+    ["Income", `B${incTot}`, incPlan, `C${incTot}`, incTotal, "C7-B7", incTotal - incPlan],
+    ["Expenses", `B${exTot}`, expPlan, `C${exTot}`, expTotal, "B8-C8", expPlan - expTotal],
+    ["Left over (income − expenses)", "B7-B8", incPlan - expPlan, "C7-C8", incTotal - expTotal, "C9-B9", (incTotal - expTotal) - (incPlan - expPlan)]
+  ];
+  sum.forEach(([label, fb, rb, fc, rc, fd, rd], i) => {
+    const row = 7 + i;
+    b.getCell(row, 1).value = label;
+    b.getCell(row, 2).value = { formula: fb, result: rb };
+    b.getCell(row, 3).value = { formula: fc, result: rc };
+    b.getCell(row, 4).value = { formula: fd, result: rd };
+  });
+  b.getCell("A10").value = "Savings rate";
+  b.getCell("B10").value = { formula: 'IF(B7=0,"",B9/B7)', result: incPlan ? (incPlan - expPlan) / incPlan : "" };
+  b.getCell("C10").value = { formula: 'IF(C7=0,"",C9/C7)', result: incTotal ? (incTotal - expTotal) / incTotal : "" };
+  b.getCell("A11").value = "Difference: positive = good (under budget, or more income than planned).";
+  b.getCell("A11").font = ARIAL({ italic: true, size: 9, color: { argb: "FF595959" } });
+
+  // formats + borders
+  const tableRows = [...Array.from({ length: 5 }, (_, i) => 6 + i), ...range(incStart - 1, incTot), ...range(exH, exTot)];
+  for (const row of tableRows) for (let c = 1; c <= 5; c++) {
+    const cell = b.getCell(row, c);
+    cell.border = box;
+    if (!cell.font || cell.font.name !== "Arial") cell.font = ARIAL();
+    if (c >= 2 && c <= 4) cell.numFmt = EUR;
+    if (c === 5) cell.numFmt = "0%";
+  }
+  ["B10", "C10"].forEach(a => b.getCell(a).numFmt = "0%");
+  for (const row of [9, incTot, exTot]) for (let c = 1; c <= 5; c++) {
+    const cell = b.getCell(row, c); cell.font = ARIAL({ bold: true }); cell.fill = fill(SUBFILL);
+  }
+  for (const row of [6, incStart - 1, exH]) for (let c = 1; c <= 5; c++)
+    b.getCell(row, c).font = ARIAL({ bold: true, color: { argb: "FFFFFFFF" } });
+
+  const redRule = { type: "cellIs", operator: "lessThan", formulae: [0], style: { font: { color: { argb: "FFC00000" }, bold: true }, fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFDE2E2" } } } };
+  const greenRule = { type: "cellIs", operator: "greaterThan", formulae: [0], style: { font: { color: { argb: "FF2E7D32" } } } };
+  b.addConditionalFormatting({ ref: `D${exStart}:D${exTot}`, rules: [redRule, greenRule] });
+  b.addConditionalFormatting({ ref: `D${incStart}:D${incTot}`, rules: [redRule, greenRule] });
+  b.addConditionalFormatting({ ref: "D7:D9", rules: [redRule] });
+  b.addConditionalFormatting({ ref: `E${exStart}:E${exEnd}`, rules: [{ type: "cellIs", operator: "greaterThan", formulae: [1], style: { font: { color: { argb: "FFC00000" }, bold: true } } }] });
+  if (arch) {
+    b.getCell(`A${exTot + 2}`).value = "Actual amounts include totals from entries cleared when you closed this month earlier (added in the formula).";
+    b.getCell(`A${exTot + 2}`).font = ARIAL({ italic: true, size: 9, color: { argb: "FF595959" } });
+  }
+
+  logSheet(ex, ["Date", "Category", "Note", "Amount (€)", "Paid with"], [12, 26, 36, 14, 16],
+    expTx.map(t => [xDate(t.date), expName(t), t.note || "", t.amount, t.method || ""]),
+    `Budget!$A$${exStart}:$A$${exEnd}`);
+  logSheet(inc, ["Date", "Source", "Note", "Amount (€)"], [12, 24, 36, 14],
+    incTx.map(t => [xDate(t.date), incName(t), t.note || "", t.amount]),
+    `Budget!$A$${incStart}:$A$${incEnd}`);
+
+  const buf = await wb.xlsx.writeBuffer();
+  const url = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  const a = el("a", { href: url, download: `Budget-${ym}.xlsx` }); document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function range(a, b) { return Array.from({ length: b - a + 1 }, (_, i) => a + i); }
+
+$("#me-excel").onclick = async () => {
+  try { await exportExcel(ui.month); toast("Excel report downloaded"); }
+  catch { toast("Couldn't create the Excel file. Check your connection and try again."); }
+};
+$("#me-close").onclick = async () => {
+  const ym = ui.month, name = monthName(ym), n = monthTx(ym).length;
+  try { await exportExcel(ym); }
+  catch { toast("Couldn't create the Excel file, so nothing was cleared."); return; }
+  if (!confirm(`Your Excel report for ${name} has downloaded. Check it opens, then press OK to clear this month's ${n} entr${n === 1 ? "y" : "ies"} from the app.\n\nYour plan and ${name}'s totals are kept.`)) {
+    toast("Report downloaded. Nothing was cleared."); return;
+  }
+  const d = monthData(ym);
+  const prev = state.archive[ym];
+  state.archive[ym] = {
+    cats: d.spentBy,
+    income: d.income,
+    planned: prev ? prev.planned : Object.fromEntries(state.categories.map(c => [c.id, c.planned || 0])),
+    plannedInc: prev ? prev.plannedInc : Object.fromEntries(state.sources.map(s => [s.id, s.planned || 0])),
+    closedAt: Date.now()
+  };
+  state.tx = state.tx.filter(t => ymOf(t.date) !== ym);
+  save(); resetForm(); render(); toast(`${name} closed`);
 };
 
 /* ---------- navigation ---------- */
