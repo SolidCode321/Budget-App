@@ -11,6 +11,27 @@ Your data is stored in your browser's localStorage, on the device you use it on.
 - `manifest.json`, `icon.svg` – lets you "Add to Home Screen" on your phone
 - `vercel.json` – security headers (CSP etc.) for Vercel
 - `vendor/exceljs.min.js` – library used to build the Excel report
+- `middleware.js`, `package.json` – the login gate (runs on Vercel)
+
+## Login (only you can open the app)
+
+`middleware.js` runs on Vercel before any page or file is served. Without a valid login it only shows the login page. The username and password are **not in the code**: they're read from Vercel environment variables, so they never end up in GitHub or in the browser.
+
+Before (or right after) your first deploy, open your project on vercel.com → **Settings → Environment Variables** and add these three, for the Production environment:
+
+| Name | Value |
+|---|---|
+| `APP_USERNAME` | your username |
+| `APP_PASSWORD` | your password |
+| `SESSION_SECRET` | a long random string – run `openssl rand -base64 32` to make one |
+
+Then redeploy (`vercel --prod`, or *Deployments → ⋯ → Redeploy*). Environment variable changes only apply after a redeploy.
+
+- If any of the three is missing, the site shows a "Login isn't set up" message and serves nothing else.
+- You stay logged in for 30 days per device. **Log out** is in the top-right corner.
+- To change your password: update `APP_PASSWORD` and redeploy.
+- To log out every device at once: change `SESSION_SECRET` and redeploy.
+- Wrong passwords get a 1-second delay to slow down guessing.
 
 ## Deploy to Vercel (free)
 
@@ -41,4 +62,5 @@ The Excel export uses ExcelJS (MIT licence), bundled in `vendor/` so no outside 
 
 - Data on your laptop and on your phone are separate (each browser keeps its own copy). Use backup/restore to copy between them.
 - Clearing your browser's site data erases the budget. Keep a recent backup.
-- Anyone with the URL sees an empty app of their own; they can't see your data.
+- The login protects the site. Your budget data itself still lives in each browser's storage, so it doesn't sync between devices – use backup/restore for that.
+- `vercel dev` runs the login locally too; put the three variables in a `.env.local` file (it's git-ignored).

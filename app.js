@@ -184,6 +184,25 @@ function renderMonth() {
   }
 }
 
+/* ---------- phone bottom sheet ---------- */
+const phone = matchMedia("(max-width: 640px)");
+function openSheet() {
+  if (!phone.matches) return;
+  document.body.classList.add("sheet-open");
+  setTimeout(() => $("#f-amount").focus(), 260);
+}
+function closeSheet() {
+  if (!document.body.classList.contains("sheet-open")) return;
+  document.body.classList.remove("sheet-open");
+  $("#f-amount").blur();
+  $("#fab").focus({ preventScroll: true });
+}
+$("#fab").onclick = () => { resetForm(); openSheet(); };
+$("#backdrop").onclick = () => { closeSheet(); resetForm(); };
+$("#sheet-close").onclick = () => { closeSheet(); resetForm(); };
+document.addEventListener("keydown", e => { if (e.key === "Escape" && document.body.classList.contains("sheet-open")) { closeSheet(); resetForm(); } });
+phone.addEventListener("change", () => document.body.classList.remove("sheet-open"));
+
 /* ---------- form ---------- */
 function fillCatSelect() {
   const sel = $("#f-cat"), keep = sel.value;
@@ -211,6 +230,7 @@ function startEdit(id) {
   $("#f-amount").value = t.amount; $("#f-cat").value = t.catId; $("#f-date").value = t.date;
   $("#f-note").value = t.note || ""; if (t.method) $("#f-method").value = t.method;
   $("#form-title").textContent = "Edit transaction"; $("#f-cancel").hidden = false;
+  if (phone.matches) { openSheet(); return; }
   $("#add").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   $("#f-amount").focus();
 }
@@ -237,9 +257,9 @@ $("#tx-form").addEventListener("submit", e => {
   }
   save();
   if (ymOf(date) !== ui.month) ui.month = ymOf(date);
-  resetForm(); render();
+  closeSheet(); resetForm(); render();
 });
-$("#f-cancel").onclick = resetForm;
+$("#f-cancel").onclick = () => { closeSheet(); resetForm(); };
 document.querySelectorAll(".seg button").forEach(b => b.onclick = () => setType(b.dataset.type));
 
 /* ---------- year view ---------- */
@@ -574,6 +594,8 @@ $("#me-close").onclick = async () => {
 /* ---------- navigation ---------- */
 function switchView(v) {
   ui.view = v;
+  document.body.dataset.view = v;
+  document.body.classList.remove("sheet-open");
   for (const name of ["month", "year", "settings"]) $("#view-" + name).hidden = name !== v;
   document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === v)));
   if (v === "month") resetForm();
@@ -590,5 +612,6 @@ function render() {
   else renderSettings();
 }
 
+document.body.dataset.view = ui.view;
 resetForm();
 render();

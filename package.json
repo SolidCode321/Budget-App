@@ -1,0 +1,8 @@
+{
+  "name": "budget-app",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@vercel/functions": "^3.9.9"
+  }
+}

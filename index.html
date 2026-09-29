@@ -8,6 +8,10 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Budget">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
@@ -15,18 +19,19 @@
 :root{
   --bg:#eef1f6; --surface:#ffffff; --ink:#14264f; --text:#1c2333; --muted:#5d6678;
   --line:#d6dbe5; --ok:#007852; --bad:#c8102e; --warn:#b77a00; --focus:#003ca6;
-  --field:#f6f8fb;
+  --field:#f6f8fb; --head:#14264f;
   --sans:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
   --cond:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme:dark){
-  :root{--bg:#0d1424;--surface:#16203a;--ink:#dfe6f5;--text:#e4e8f1;--muted:#98a2b8;--line:#2b3753;--ok:#3fbf8c;--bad:#ff6b7d;--warn:#e7b04a;--focus:#7fa8ff;--field:#1c2743}
+  :root{--bg:#0d1424;--surface:#16203a;--ink:#dfe6f5;--text:#e4e8f1;--muted:#98a2b8;--line:#2b3753;--ok:#3fbf8c;--bad:#ff6b7d;--warn:#e7b04a;--focus:#7fa8ff;--field:#1c2743;--head:#0a1020}
 }
 *,*::before,*::after{box-sizing:inherit}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
-body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+html{background:var(--head)}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font:16px/1.5 var(--sans);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
 button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 .wrap{max-width:980px;margin:0 auto;padding:16px}
@@ -38,6 +43,8 @@ header{background:var(--ink);color:#fff}
 .brand{font:700 1.35rem/1 var(--cond);letter-spacing:.01em;margin-right:auto;display:flex;align-items:center;gap:10px}
 .brand svg{flex:none}
 nav{display:flex;gap:4px;width:100%}
+.logout button{background:none;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:500}
+.logout button:hover{background:rgba(255,255,255,.1)}
 nav button{background:none;border:0;color:#c7d0e6;padding:10px 14px 12px;font:600 1rem var(--cond);cursor:pointer;border-bottom:4px solid transparent}
 nav button[aria-selected=true]{color:#fff;border-bottom-color:#ffcd00}
 
@@ -129,11 +136,90 @@ td.zero{color:var(--muted)}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .total-line{display:flex;justify-content:space-between;font-weight:600;border-top:1px solid var(--line);padding-top:10px}
 
+
+/* ---------- phone layout ---------- */
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sheet-close,.fab,.backdrop{display:none}
+@media (max-width:640px){
+  body{font-size:16px}
+  .wrap{padding:12px}
+  main.wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+  .head{padding-top:10px;padding-bottom:10px;gap:10px}
+  .brand{font-size:1.25rem}
+  /* bottom tab bar */
+  nav{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--head);gap:0;
+      padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);
+      border-top:1px solid rgba(255,255,255,.12)}
+  nav button{flex:1;min-height:58px;padding:8px 4px;border-bottom:0;border-top:3px solid transparent;font-size:1rem}
+  nav button[aria-selected=true]{border-top-color:#ffcd00;border-bottom-color:transparent}
+  /* month header + summary */
+  .month-bar{margin:6px 0 10px;justify-content:space-between}
+  .month-bar h1{font-size:1.55rem;white-space:nowrap;min-width:0;margin:0;text-align:center;flex:1}
+  .iconbtn{width:44px;height:44px;flex:none}
+  #today{position:absolute;opacity:0;pointer-events:none}
+  #today:not([hidden]){position:static;opacity:1;pointer-events:auto;order:5;width:100%;text-align:center}
+  .month-bar{flex-wrap:wrap}
+  .board{padding:16px;gap:14px}
+  .stats{gap:8px 12px}
+  .stat b{font-size:1.15rem}
+  section.card{padding:14px 16px;margin-top:12px;border-radius:12px}
+  /* add form becomes a bottom sheet */
+  #add{position:fixed;left:0;right:0;bottom:0;z-index:50;margin:0;border-radius:18px 18px 0 0;border-bottom:0;
+       max-height:88vh;overflow-y:auto;overscroll-behavior:contain;
+       padding:10px 16px calc(18px + env(safe-area-inset-bottom,0px));
+       transform:translateY(110%);transition:transform .25s ease;visibility:hidden;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
+  #add::before{content:"";display:block;width:40px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 10px}
+  body.sheet-open #add{transform:none;visibility:visible}
+  .sheet-close{display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:50%;background:var(--field);cursor:pointer;font-size:1rem;margin-right:-6px}
+  #add h2{margin:0}
+  .sheet-head{margin-bottom:10px}
+  .seg{display:flex;width:100%}
+  .seg button{flex:1;min-height:40px}
+  .form{grid-template-columns:1fr 1fr;gap:12px}
+  .form .amt,.form .cat,.form .note{grid-column:1/-1}
+  input,select{min-height:48px;font-size:16px}
+  input.amount{font-size:1.6rem;min-height:56px}
+  .form .actions{flex-direction:column;align-items:stretch}
+  .form .actions .primary,.form .actions .ghost{width:100%;min-height:50px;font-size:1.05rem}
+  .backdrop{display:block;position:fixed;inset:0;z-index:45;background:rgba(5,10,25,.45);opacity:0;pointer-events:none;transition:opacity .2s}
+  body.sheet-open .backdrop{opacity:1;pointer-events:auto}
+  body.sheet-open{overflow:hidden}
+  .fab{display:grid;place-items:center;position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(74px + env(safe-area-inset-bottom,0px));
+       z-index:35;width:60px;height:60px;border-radius:50%;border:0;background:#ffcd00;color:#14264f;font:600 2rem/1 var(--sans);
+       box-shadow:0 6px 18px rgba(0,0,0,.28);cursor:pointer}
+  body:not([data-view=month]) .fab{display:none}
+  /* lists */
+  .lines li{grid-template-columns:30px 1fr auto;gap:2px 10px}
+  .badge{width:30px;height:30px;font-size:.9rem}
+  .lnums{font-size:.95rem}
+  .tx li{grid-template-columns:48px 1fr auto;grid-template-areas:"d t a" "d t o";row-gap:0}
+  .tx .d{grid-area:d;font-size:.85rem;white-space:normal;line-height:1.15}
+  .tx .t{grid-area:t;min-width:0}
+  .tx .t > span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tx .a{grid-area:a;text-align:right}
+  .tx .ops{grid-area:o;justify-content:flex-end}
+  .tx .ops button{width:40px;height:36px}
+  .row{flex-direction:column;align-items:stretch}
+  .row > .ghost,.row > .primary,.row > label.ghost{width:100%;min-height:48px;text-align:center;display:flex;align-items:center;justify-content:center}
+  /* year table */
+  th,td{padding:8px 8px;font-size:.88rem}
+  th:first-child,td:first-child{max-width:130px;overflow:hidden;text-overflow:ellipsis}
+  #view-year .row{flex-direction:column;align-items:flex-start}
+  /* settings */
+  .edit-list li{grid-template-columns:1fr 104px 44px;gap:8px}
+  .edit-list li .dot{display:none}
+  .edit-list .del{height:44px}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px));max-width:calc(100% - 32px);text-align:center}
+  .logout button{min-height:40px}
+}
+@media (max-width:640px) and (prefers-reduced-motion:reduce){#add,.backdrop{transition:none}}
+
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .2s}
 @media (prefers-color-scheme:dark){.toast{background:#dfe6f5;color:#0d1424}}
 .toast.show{opacity:1}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:640px){nav .long{display:none}.toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}}
 </style>
 </head>
 <body>
@@ -143,10 +229,11 @@ td.zero{color:var(--muted)}
       <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#ffcd00"/><text x="16" y="22" text-anchor="middle" font-family="Barlow Semi Condensed,Arial" font-weight="700" font-size="17" fill="#14264f">€</text></svg>
       Budget
     </div>
+    <form method="post" action="/logout" class="logout"><button type="submit">Log out</button></form>
     <nav role="tablist" aria-label="Sections">
       <button role="tab" data-view="month" aria-selected="true">Month</button>
       <button role="tab" data-view="year" aria-selected="false">Year</button>
-      <button role="tab" data-view="settings" aria-selected="false">Plan &amp; settings</button>
+      <button role="tab" data-view="settings" aria-selected="false">Plan<span class="long"> &amp; settings</span></button>
     </nav>
   </div>
 </header>
@@ -176,8 +263,8 @@ td.zero{color:var(--muted)}
       </div>
     </div>
 
-    <section class="card" id="add">
-      <h2 id="form-title">Add a transaction</h2>
+    <section class="card" id="add" aria-labelledby="form-title">
+      <div class="sheet-head"><h2 id="form-title">Add a transaction</h2><button type="button" class="sheet-close" id="sheet-close" aria-label="Close">✕</button></div>
       <div class="seg" role="group" aria-label="Type">
         <button type="button" data-type="expense" aria-pressed="true">Expense</button>
         <button type="button" data-type="income" aria-pressed="false">Income</button>
@@ -261,6 +348,8 @@ td.zero{color:var(--muted)}
   </div>
 </main>
 
+<div class="backdrop" id="backdrop"></div>
+<button class="fab" id="fab" aria-label="Add a transaction">+</button>
 <div class="toast" id="toast" role="status"></div>
 
 <script src="app.js"></script>
